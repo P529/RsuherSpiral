@@ -1,0 +1,13 @@
+{
+  "Plugin-Class": "me.wasteofti.Basefinder",
+  "Name": "Basefinder",
+  "Version": "${plugin_version}",
+  "Description": "Rusherhack Basefinder Plugin",
+  "Authors": [
+    "John200410",
+    "P529"
+  ],
+  "Minecraft-Versions": [
+    "1.20.4"
+  ]
+}
