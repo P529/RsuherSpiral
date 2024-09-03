@@ -85,7 +85,7 @@ public class BasefinderModule extends ToggleableModule {
     private void setStartPos() {
         if (!startPosZero()) {
             assert mc.level != null;
-            this.targetChunk = mc.level.getChunk(startX.getValue()/16, startZ.getValue()/16).getPos();
+            this.targetChunk = mc.level.getChunk(startX.getValue(), startZ.getValue()).getPos();
         } else {
             assert mc.player != null;
             this.targetChunk = mc.player.chunkPosition();
@@ -188,7 +188,6 @@ public class BasefinderModule extends ToggleableModule {
         ChunkPos playerChunkPos = mc.player.chunkPosition();
 
         if (lastExceedingChunkPos != null && isWithinRenderDistance(playerChunkPos, lastExceedingChunkPos, renderDistanceChunks)) {
-            RusherHackAPI.getNotificationManager().info("Aiiiiiiiiiiiiiiiii");
             return false;
         }
 
