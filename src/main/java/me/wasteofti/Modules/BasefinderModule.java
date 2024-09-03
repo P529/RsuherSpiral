@@ -19,6 +19,15 @@ import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.core.setting.NullSetting;
 import org.rusherhack.core.setting.NumberSetting;
 
+import java.util.*;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.text.SimpleDateFormat;
+
 public class BasefinderModule extends ToggleableModule {
 
     private final NumberSetting<Integer>chunkDistanceSetting = new NumberSetting<>("Chunk Distance", 7, 0, 20)
@@ -41,7 +50,7 @@ public class BasefinderModule extends ToggleableModule {
     private final BooleanSetting saveStepSetting = new BooleanSetting("Save Step", "Saves the current step upon disable.", true);
 
     int step;
-    private Direction[] directions = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
+    private final Direction[] directions = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
     private ChunkPos targetChunk;
     private ChunkPos lastExceedingChunkPos = null;
 
@@ -71,33 +80,17 @@ public class BasefinderModule extends ToggleableModule {
             step++;
         }
 
-        RusherHackAPI.getNotificationManager().info("Next chunk at " + targetChunk.toString());
-        RusherHackAPI.getNotificationManager().info("Next goal at " + targetChunk.x*16 + " " + targetChunk.z*16);
-        RusherHackAPI.getNotificationManager().info("Center at " + startX.getValue() + " " +  startZ.getValue());
-
     }
 
     private void setStartPos() {
         if (!startPosZero()) {
-            RusherHackAPI.getNotificationManager().info("Case: Start Pos not zero");
-            RusherHackAPI.getNotificationManager().info("Start coords: " + startX.getValue().toString() + " " + startZ.getValue().toString());
             assert mc.level != null;
-            this.targetChunk = mc.level.getChunk(new BlockPos(startX.getValue().intValue(), 0, startZ.getValue().intValue())).getPos();
-            RusherHackAPI.getNotificationManager().info("Target chunk: " + targetChunk.x + " " + targetChunk.z);
-            RusherHackAPI.getNotificationManager().info("Center block of target chunk " + targetChunk.getMiddleBlockPosition(120));
-            RusherHackAPI.getNotificationManager().info("Region coords of target chunk: " + targetChunk.getRegionX());
-            RusherHackAPI.getNotificationManager().info(targetChunk.toString());
+            this.targetChunk = mc.level.getChunk(startX.getValue()/16, startZ.getValue()/16).getPos();
         } else {
-            RusherHackAPI.getNotificationManager().info("Case: Start Pos zero");
-            RusherHackAPI.getNotificationManager().info("Start coords: " + startX.getValue().toString() + " " + startZ.getValue().toString());
             assert mc.player != null;
             this.targetChunk = mc.player.chunkPosition();
             startX.setValue(mc.player.getX());
             startZ.setValue(mc.player.getZ());
-            RusherHackAPI.getNotificationManager().info("Target chunk: " + targetChunk.x + " " + targetChunk.z);
-            RusherHackAPI.getNotificationManager().info("Center block of target chunk " + targetChunk.getMiddleBlockPosition(120));
-            RusherHackAPI.getNotificationManager().info("Region coords of target chunk: " + targetChunk.getRegionX());
-            RusherHackAPI.getNotificationManager().info(targetChunk.toString());
         }
     }
 
@@ -114,13 +107,13 @@ public class BasefinderModule extends ToggleableModule {
         }
 
         rotateTo(
-                mc.player.getEyePosition(),
-                targetChunk.getMiddleBlockPosition(0).getCenter()
+            mc.player.getEyePosition(),
+            targetChunk.getMiddleBlockPosition(0).getCenter()
         );
 
         ChunkPos currentPos = mc.player.chunkPosition();
         if (currentPos.x == targetChunk.x && currentPos.z == targetChunk.z) {
-            RusherHackAPI.getNotificationManager().info(String.format("Reached chunk at %s with iteration %d", currentPos.toString(), step));
+            RusherHackAPI.getNotificationManager().info(String.format("Reached chunk at %s after iteration %d", currentPos.toString(), step));
             targetChunk = nextTarget();
             step++;
             RusherHackAPI.getNotificationManager().info(String.format("Next chunk at %s", nextTarget().toString()));
@@ -131,9 +124,28 @@ public class BasefinderModule extends ToggleableModule {
         }
     }
 
+    public void logStashToFile(int x, int y, int z) {
+        Path configPath = RusherHackAPI.getConfigPath();
+
+        File basefinderPluginFolder = new File(String.valueOf(configPath), "BasefinderPlugin");
+
+        if (!basefinderPluginFolder.exists()) {
+            basefinderPluginFolder.mkdir();
+        }
+
+        String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+        File coordinatesFile = new File(basefinderPluginFolder, date + ".txt");
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(coordinatesFile, true))) {
+            writer.write("Coordinates: X=" + x + ", Y=" + y + ", Z=" + z);
+            writer.newLine();
+            writer.flush();
+        } catch (IOException e) {
+        }
+    }
+
     @Override
     public void onDisable() {
-        RusherHackAPI.getNotificationManager().info("We at step: " + step + " and for some reason we do -1");
         closingActions();
     }
 
@@ -170,39 +182,106 @@ public class BasefinderModule extends ToggleableModule {
     private boolean checkStorageContainersInRenderDistance() {
         if (mc.level == null || mc.player == null) return false;
 
-        int containerCount = 0;
-        int renderDistance = mc.options.renderDistance().get();
+        List<BlockPos> chestPositions = new ArrayList<>();
+        int renderDistanceChunks = mc.options.renderDistance().get();
 
         ChunkPos playerChunkPos = mc.player.chunkPosition();
-        int chunkRadius = renderDistance / 16;
 
-        if (lastExceedingChunkPos != null) {
-            int dx = playerChunkPos.x - lastExceedingChunkPos.x;
-            int dz = playerChunkPos.z - lastExceedingChunkPos.z;
-            if (dx * dx + dz * dz <= chunkRadius * chunkRadius * 4) {
-                return false;
-            }
+        if (lastExceedingChunkPos != null && isWithinRenderDistance(playerChunkPos, lastExceedingChunkPos, renderDistanceChunks)) {
+            RusherHackAPI.getNotificationManager().info("Aiiiiiiiiiiiiiiiii");
+            return false;
         }
 
-        for (int xOffset = -chunkRadius; xOffset <= chunkRadius; xOffset++) {
-            for (int zOffset = -chunkRadius; zOffset <= chunkRadius; zOffset++) {
+        for (int xOffset = -renderDistanceChunks; xOffset <= renderDistanceChunks; xOffset++) {
+            for (int zOffset = -renderDistanceChunks; zOffset <= renderDistanceChunks; zOffset++) {
                 ChunkPos chunkPos = new ChunkPos(playerChunkPos.x + xOffset, playerChunkPos.z + zOffset);
                 ChunkAccess chunk = mc.level.getChunk(chunkPos.x, chunkPos.z);
 
                 for (BlockPos blockPos : chunk.getBlockEntitiesPos()) {
                     BlockEntity blockEntity = chunk.getBlockEntity(blockPos);
                     if (blockEntity != null && isStorageContainer(blockEntity)) {
-                        containerCount++;
-                        if (containerCount > storageAmount.getValue()) {
-                            lastExceedingChunkPos = playerChunkPos;
-                            return true;
-                        }
+                        chestPositions.add(blockPos);
                     }
                 }
             }
         }
 
+        if (chestPositions.size() > storageAmount.getValue()) {
+            BlockPos largestClusterCenter = findLargestClusterCenter(chestPositions, 10);
+
+            if (largestClusterCenter != null) {
+                lastExceedingChunkPos = new ChunkPos(largestClusterCenter);
+                logStashToFile(largestClusterCenter.getX(), largestClusterCenter.getY(), largestClusterCenter.getZ());
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    private BlockPos findLargestClusterCenter(List<BlockPos> chestPositions, int clusterRadius) {
+        Map<BlockPos, List<BlockPos>> clusters = new HashMap<>();
+
+        for (BlockPos pos : chestPositions) {
+            boolean addedToCluster = false;
+
+            for (BlockPos clusterKey : clusters.keySet()) {
+                if (isWithinClusterRadius(pos, clusterKey, clusterRadius)) {
+                    clusters.get(clusterKey).add(pos);
+                    addedToCluster = true;
+                    break;
+                }
+            }
+
+            if (!addedToCluster) {
+                clusters.put(pos, new ArrayList<>(Collections.singletonList(pos)));
+            }
+        }
+
+        List<BlockPos> largestCluster = null;
+        for (List<BlockPos> cluster : clusters.values()) {
+            if (largestCluster == null || cluster.size() > largestCluster.size()) {
+                largestCluster = cluster;
+            }
+        }
+
+        if (largestCluster != null && !largestCluster.isEmpty()) {
+            return calculateClusterCenter(largestCluster);
+        }
+
+        return null;
+    }
+
+    private boolean isWithinClusterRadius(BlockPos pos1, BlockPos pos2, int radius) {
+        int dx = Math.abs(pos1.getX() - pos2.getX());
+        int dz = Math.abs(pos1.getZ() - pos2.getZ());
+        return dx <= radius && dz <= radius;
+    }
+
+    private BlockPos calculateClusterCenter(List<BlockPos> cluster) {
+        int sumX = 0;
+        int sumY = 0;
+        int sumZ = 0;
+
+        for (BlockPos pos : cluster) {
+            sumX += pos.getX();
+            sumY += pos.getY();
+            sumZ += pos.getZ();
+        }
+
+        int centerX = sumX / cluster.size();
+        int centerY = sumY / cluster.size();
+        int centerZ = sumZ / cluster.size();
+
+        return new BlockPos(centerX, centerY, centerZ);
+    }
+
+    private boolean isWithinRenderDistance(ChunkPos currentPos, ChunkPos lastPos, int renderDistanceChunks) {
+        int dx = currentPos.x - lastPos.x;
+        int dz = currentPos.z - lastPos.z;
+        int distanceSquared = dx * dx + dz * dz;
+        int renderDistance = renderDistanceChunks * 16;
+        return distanceSquared <= renderDistance;
     }
 
     private double toDegree(double rad) {
