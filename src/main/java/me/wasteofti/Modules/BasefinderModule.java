@@ -14,38 +14,36 @@ import org.rusherhack.client.api.events.client.EventQuit;
 import org.rusherhack.client.api.events.client.EventUpdate;
 import org.rusherhack.client.api.feature.module.ModuleCategory;
 import org.rusherhack.client.api.feature.module.ToggleableModule;
-import org.rusherhack.client.api.setting.BindSetting;
-import org.rusherhack.core.bind.key.NullKey;
 import org.rusherhack.core.event.subscribe.Subscribe;
 import org.rusherhack.core.setting.BooleanSetting;
 import org.rusherhack.core.setting.NullSetting;
 import org.rusherhack.core.setting.NumberSetting;
-import org.rusherhack.core.setting.StringSetting;
 
 public class BasefinderModule extends ToggleableModule {
 
-    private final NumberSetting<Double> chunkDistanceSetting = new NumberSetting<>("Chunk Distance", 7.0, 0.0, 20.0)
+    private final NumberSetting<Integer>chunkDistanceSetting = new NumberSetting<>("Chunk Distance", 7, 0, 20)
             .incremental(1);
 
-    private final NumberSetting<Double> startStepSetting = new NumberSetting<>("Start Step", 0.0, 0.0, 20.0)
+    private final NumberSetting<Integer> startStepSetting = new NumberSetting<>("Start Step", 0, 0, 20)
             .incremental(1);
 
     private final NullSetting startPositionSetting = new NullSetting("Start Position");
 
-    private static final NumberSetting<Double> startX = new NumberSetting<>("Start X", 0.0, -29999999.0, 29999999.0)
+    private static final NumberSetting<Integer> startX = new NumberSetting<>("Start X", 0, -29999999, 29999999)
             .incremental(1);
 
-    private static final NumberSetting<Double> startZ = new NumberSetting<>("Start Z", 0.0, -29999999.0, 29999999.0)
+    private static final NumberSetting<Integer> startZ = new NumberSetting<>("Start Z", 0, -29999999, 29999999)
             .incremental(1);
 
-    private final NumberSetting<Double> storageAmount = new NumberSetting<>("Chest amount", 25.0, 0.0, 500.0)
+    private final NumberSetting<Integer> storageAmount = new NumberSetting<>("Chest amount", 25, 0, 500)
             .incremental(1);
 
     private final BooleanSetting saveStepSetting = new BooleanSetting("Save Step", "Saves the current step upon disable.", true);
 
     int step;
-    ChunkPos targetChunk;
-    Direction[] directions = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
+    private Direction[] directions = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
+    private ChunkPos targetChunk;
+    private ChunkPos lastExceedingChunkPos = null;
 
     public BasefinderModule() {
         super("BasefinderSpiral", "Module that spirals and area and saves n number of chest locations to a file.", ModuleCategory.WORLD);
@@ -56,7 +54,8 @@ public class BasefinderModule extends ToggleableModule {
                 this.chunkDistanceSetting,
                 this.startStepSetting,
                 this.saveStepSetting,
-                this.startPositionSetting
+                this.startPositionSetting,
+                this.storageAmount
         );
     }
 
@@ -72,21 +71,38 @@ public class BasefinderModule extends ToggleableModule {
             step++;
         }
 
-        RusherHackAPI.getNotificationManager().info(("Next chunk at " + targetChunk.toString()));
+        RusherHackAPI.getNotificationManager().info("Next chunk at " + targetChunk.toString());
+        RusherHackAPI.getNotificationManager().info("Next goal at " + targetChunk.x*16 + " " + targetChunk.z*16);
+        RusherHackAPI.getNotificationManager().info("Center at " + startX.getValue() + " " +  startZ.getValue());
+
     }
 
     private void setStartPos() {
         if (!startPosZero()) {
-            targetChunk = mc.level.getChunk(new BlockPos(startX.getValue().intValue(), 0, startZ.getValue().intValue())).getPos();
+            RusherHackAPI.getNotificationManager().info("Case: Start Pos not zero");
+            RusherHackAPI.getNotificationManager().info("Start coords: " + startX.getValue().toString() + " " + startZ.getValue().toString());
+            assert mc.level != null;
+            this.targetChunk = mc.level.getChunk(new BlockPos(startX.getValue().intValue(), 0, startZ.getValue().intValue())).getPos();
+            RusherHackAPI.getNotificationManager().info("Target chunk: " + targetChunk.x + " " + targetChunk.z);
+            RusherHackAPI.getNotificationManager().info("Center block of target chunk " + targetChunk.getMiddleBlockPosition(120));
+            RusherHackAPI.getNotificationManager().info("Region coords of target chunk: " + targetChunk.getRegionX());
+            RusherHackAPI.getNotificationManager().info(targetChunk.toString());
         } else {
+            RusherHackAPI.getNotificationManager().info("Case: Start Pos zero");
+            RusherHackAPI.getNotificationManager().info("Start coords: " + startX.getValue().toString() + " " + startZ.getValue().toString());
+            assert mc.player != null;
             this.targetChunk = mc.player.chunkPosition();
             startX.setValue(mc.player.getX());
             startZ.setValue(mc.player.getZ());
+            RusherHackAPI.getNotificationManager().info("Target chunk: " + targetChunk.x + " " + targetChunk.z);
+            RusherHackAPI.getNotificationManager().info("Center block of target chunk " + targetChunk.getMiddleBlockPosition(120));
+            RusherHackAPI.getNotificationManager().info("Region coords of target chunk: " + targetChunk.getRegionX());
+            RusherHackAPI.getNotificationManager().info(targetChunk.toString());
         }
     }
 
     private static boolean startPosZero() {
-        return startX.getValue() == 0.0 && startZ.getValue() == 0.0;
+        return startX.getValue() == 0 && startZ.getValue() == 0;
     }
 
     @Subscribe
@@ -111,12 +127,13 @@ public class BasefinderModule extends ToggleableModule {
         }
 
         if (checkStorageContainersInRenderDistance()) {
-            RusherHackAPI.getNotificationManager().info(String.format("More than %f storage containers found in render distance!", storageAmount.getValue()));
+            RusherHackAPI.getNotificationManager().info(String.format("More than %d storage containers found in render distance!", storageAmount.getValue()));
         }
     }
 
     @Override
     public void onDisable() {
+        RusherHackAPI.getNotificationManager().info("We at step: " + step + " and for some reason we do -1");
         closingActions();
     }
 
@@ -126,17 +143,15 @@ public class BasefinderModule extends ToggleableModule {
     }
 
     private void closingActions() {
-        if (saveStepSetting.getValue())
-        {
+        if (saveStepSetting.getValue()) {
             startStepSetting.setValue(step);
-            assert mc.player != null;
         }
     }
 
     private ChunkPos nextTarget() {
         int index = step % directions.length;
         Vec3i directionVec = directions[index].getNormal();
-        int nextDistance = (step + 1) * chunkDistanceSetting.getValue().intValue();
+        int nextDistance = (step + 1) * chunkDistanceSetting.getValue();
         int nextX = targetChunk.x + directionVec.getX() * nextDistance;
         int nextZ = targetChunk.z + directionVec.getZ() * nextDistance;
         return new ChunkPos(nextX, nextZ);
@@ -152,10 +167,6 @@ public class BasefinderModule extends ToggleableModule {
         mc.player.setYRot((float) Mth.wrapDegrees(toDegree(yawRad) - 90.0));
     }
 
-    private double toDegree(double rad) {
-        return rad * 180 / Math.PI;
-    }
-
     private boolean checkStorageContainersInRenderDistance() {
         if (mc.level == null || mc.player == null) return false;
 
@@ -164,6 +175,14 @@ public class BasefinderModule extends ToggleableModule {
 
         ChunkPos playerChunkPos = mc.player.chunkPosition();
         int chunkRadius = renderDistance / 16;
+
+        if (lastExceedingChunkPos != null) {
+            int dx = playerChunkPos.x - lastExceedingChunkPos.x;
+            int dz = playerChunkPos.z - lastExceedingChunkPos.z;
+            if (dx * dx + dz * dz <= chunkRadius * chunkRadius * 4) {
+                return false;
+            }
+        }
 
         for (int xOffset = -chunkRadius; xOffset <= chunkRadius; xOffset++) {
             for (int zOffset = -chunkRadius; zOffset <= chunkRadius; zOffset++) {
@@ -175,7 +194,8 @@ public class BasefinderModule extends ToggleableModule {
                     if (blockEntity != null && isStorageContainer(blockEntity)) {
                         containerCount++;
                         if (containerCount > storageAmount.getValue()) {
-                            return true; // Early exit if we already found too many containers
+                            lastExceedingChunkPos = playerChunkPos;
+                            return true;
                         }
                     }
                 }
@@ -183,6 +203,10 @@ public class BasefinderModule extends ToggleableModule {
         }
 
         return false;
+    }
+
+    private double toDegree(double rad) {
+        return rad * 180 / Math.PI;
     }
 
     private boolean isStorageContainer(BlockEntity blockEntity) {
